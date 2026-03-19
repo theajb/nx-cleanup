@@ -181,6 +181,8 @@ def run_cleanup(session, nexus_url, grouped, keep_n, dry_run, verbose):
 
         if tag_count <= keep_n:
             log.info("[RETAIN ALL] %-50s (%d tag(s))", image_path, tag_count)
+            for item in sorted_items:
+                log.info("  [KEEP]     %s:%s", image_path, item.get("version", "?"))
             retained_count += tag_count
             continue
 
@@ -193,9 +195,8 @@ def run_cleanup(session, nexus_url, grouped, keep_n, dry_run, verbose):
             tag_count, len(to_keep), len(to_delete),
         )
 
-        if verbose:
-            for item in to_keep:
-                log.info("  KEEP   → %s", item.get("version"))
+        for item in to_keep:
+            log.info("  [KEEP]     %s:%s", image_path, item.get("version", "?"))
 
         for item in to_delete:
             version = item.get("version", "?")
