@@ -1,0 +1,20 @@
+# Kubernetes Pod template for the Jenkins Agent
+# This pod will spin up in GKE to run the Python cleanup script.
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: python-runner
+      image: python:3.11-slim
+      # Keep the container alive so Jenkins can connect and run commands inside it
+      command:
+        - sleep
+      args:
+        - infinity
+      resources:
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"

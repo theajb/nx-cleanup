@@ -1,0 +1,76 @@
+pipeline {
+    // Tell Jenkins to spin up a dynamic Kubernetes Pod in GKE using our YAML file
+    agent {
+        kubernetes {
+            yamlFile 'nexus-cleanup-agent.yaml'
+            defaultContainer 'python-runner'
+        }
+    }
+
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '30')) // Keep last 30 run logs
+    }
+
+    parameters {
+        booleanParam(name: 'DRY_RUN', defaultValue: true, description: 'If checked, ONLY print what would be deleted. Uncheck to ACTUALLY delete.')
+        string(name: 'FILTER', defaultValue: '', description: 'Optional: Filter by image path (e.g. "appname/develop"). Leave empty for all.')
+        string(name: 'KEEP_N', defaultValue: '2', description: 'Number of tags to retain per image path.')
+    }
+
+    environment {
+        // --- Nexus connection details ---
+        NEXUS_URL  = 'http://your-nexus-host:8081'  // Update this to your RHEL Nexus VM IP/Hostname
+        NEXUS_REPO = 'dkr-4-test'
+        
+        // Requires Jenkins Credentials plugin: Create a 'Username with Password' credential in Jenkins globally or in the folder
+        NEXUS_CREDS = credentials('nexus-admin-creds') 
+    }
+
+    stages {
+        stage('Setup Dependencies') {
+            steps {
+                // Since we are running in the python:3.11-slim container defined in the agent YAML, 
+                // we already have Python. We just need to install the 'requests' library.
+                sh '''
+                    pip install requests --user -q
+                '''
+            }
+        }
+
+        stage('Run Cleanup') {
+            steps {
+                script {
+                    def dryRunArg = params.DRY_RUN ? "--dry-run" : ""
+                    def filterArg = params.FILTER ? "--filter ${params.FILTER}" : ""
+
+                    // Execute the python script inside the GKE pod container
+                    sh """
+                        python cleanup.py \\
+                            --url ${NEXUS_URL} \\
+                            --repo ${NEXUS_REPO} \\
+                            --user \$NEXUS_CREDS_USR \\
+                            --password \$NEXUS_CREDS_PSW \\
+                            --keep ${params.KEEP_N} \\
+                            ${dryRunArg} \\
+                            ${filterArg}
+                    """
+                }
+            }
+        }
+        
+        stage('Next Steps Reminder') {
+            when {
+                expression { return !params.DRY_RUN }
+            }
+            steps {
+                echo "======================================================================"
+                echo "[REMINDER] The Python script has soft-deleted the metadata in Nexus."
+                echo "Nexus still holds the physical blobs on the RHEL VM disk until you run:"
+                echo "1. System Task: 'Docker - Delete unused manifests and images'"
+                echo "2. System Task: 'Compact blob store'"
+                echo "======================================================================"
+            }
+        }
+    }
+}
